@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { useEffect, useState } from 'react';
 import Searchbar from './Searchbar/Searchbar';
 import Modal from 'components/Modal/Modal';
 import ImageGallery from 'components/ImageGallery/ImageGallery';
@@ -9,121 +9,105 @@ import Notiflix from 'notiflix';
 
 import * as Scroll from 'react-scroll';
 
-class App extends Component {
-  state = {
-    searchName: ' ',
-    countPage: 1,
-    per_page: 12,
-    ImagesList: [],
-    showModal: false,
-    showLoadMore: false,
-    loading: false,
-    openModalItem: { url: '', alt: '' },
-  };
+export default function App() {
+  const [searchName, setSearchName] = useState('');
+  const [countPage, setCountPage] = useState(1);
+  const [perPage, setPerPage] = useState(12);
+  const [imagesList, setImagesList] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [showLoadMore, setShowLoadMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [openModalItem, setOpenModalItem] = useState({ url: '', alt: '' });
 
-  componentDidUpdate(_, prevState) {
-    const { searchName, per_page, countPage, ImagesList } = this.state;
-
-    if (
-      prevState.countPage !== countPage ||
-      prevState.searchName !== searchName
-    ) {
-      this.setState({ showLoadMore: false, loading: true });
-      FetchData(searchName, countPage, per_page)
-        .then(data => {
-          const filterDataHits = data.hits.map(img => {
-            return Object.fromEntries(
-              Object.entries(img).filter(([key]) =>
-                ['id', 'tags', 'largeImageURL', 'webformatURL'].includes(key)
-              )
-            );
-          });
-          this.setState(prev => ({
-            ImagesList: [...prev.ImagesList, ...filterDataHits],
-            totalHits: data.totalHits,
-            loading: false,
-          }));
-          if (data.total !== data.hits.length) {
-            this.setState({ showLoadMore: true });
-          }
-          if (countPage === 1) {
-            Notiflix.Notify.success(
-              `Woo-hoo!!! We've found ${data.totalHits} images.`
-            );
-          }
-          if (data.total <= ImagesList.length + per_page) {
-            this.setState({ showLoadMore: false });
-            Notiflix.Notify.info(
-              "Whoops! You've just reached the end of the image list."
-            );
-          }
-        })
-        .catch(this.onApiError);
+  useEffect(() => {
+    if (!searchName) {
+      return;
     }
-  }
-  onApiError = () => {
+    setShowLoadMore(false);
+    setLoading(true);
+    FetchData(searchName, countPage, perPage)
+      .then(data => {
+        const filterDataHits = data.hits.map(img => {
+          return Object.fromEntries(
+            Object.entries(img).filter(([key]) =>
+              ['id', 'tags', 'largeImageURL', 'webformatURL'].includes(key)
+            )
+          );
+        });
+        const total = data.total;
+        setImagesList(prev => [...prev, ...filterDataHits]);
+        setLoading(false);
+        if (data.hits.length > 0 && data.hits.length < total) {
+          setShowLoadMore(true);
+        }
+        if (countPage === 1) {
+          Notiflix.Notify.success(
+            `Woo-hoo!!! We've found ${data.totalHits} images.`
+          );
+        }
+        if (total <= countPage * perPage) {
+          setShowLoadMore(false);
+          Notiflix.Notify.info(
+            "Whoops! You've just reached the end of the image list."
+          );
+        }
+      })
+      .catch(onApiError);
+  }, [countPage, searchName, perPage]);
+  const onApiError = () => {
     Notiflix.Notify.failure(
       'Oops! No images found for your request. Please try again.'
     );
-    this.setState({ showLoadMore: false, loading: false });
+    setShowLoadMore(false);
+    setLoading(false);
   };
 
-  onSubmit = name => {
-    this.setState(prev =>
-      prev.searchName === name && prev.countPage === 1
-        ? { countPage: 1 }
-        : {
-            searchName: name,
-            countPage: 1,
-            ImagesList: [],
-          }
-    );
+  const onSubmit = (name, itemsPerPage) => {
+    if (!name) {
+      Notiflix.Notify.warning('Please enter a name of the picture to search');
+      setShowLoadMore(false);
+    }
+
+    if (searchName === name && countPage === 1 && itemsPerPage === perPage) {
+      return;
+    }
+
+    setSearchName(name);
+    setPerPage(perPage);
+    setCountPage(1);
+    setImagesList([]);
   };
 
-  onloadMore = () => {
-    this.setState(prev => ({
-      countPage: prev.countPage + 1,
-    }));
-    this.scrollSlowly();
+  const onloadMore = () => {
+    setCountPage(prev => prev + 1);
+    scrollSlowly();
   };
 
-  scrollSlowly = () => {
+  const scrollSlowly = () => {
     const { height: cardHeight } = document
       .querySelector('#ImageGallery')
       .firstElementChild.getBoundingClientRect();
     Scroll.animateScroll.scrollMore(cardHeight * 2);
   };
-  openModal = (url, alt) => {
-    const openModalItem = { url, alt };
-    this.setState({
-      showModal: true,
-      openModalItem,
-    });
+  const openModal = (url, alt) => {
+    setOpenModalItem({ url, alt });
+    setTimeout(() => {
+      setShowModal(true);
+    }, 100);
   };
-  closeModal = () => {
-    this.setState({ showModal: false });
-  };
-  render() {
-    const { ImagesList, showModal, openModalItem, showLoadMore, loading } =
-      this.state;
-    return (
-      <div className="App">
-        <Searchbar onSubmit={this.onSubmit} />
-        {showModal && (
-          <Modal
-            url={openModalItem.url}
-            alt={openModalItem.alt}
-            onClose={this.closeModal}
-          />
-        )}
-        <ImageGallery params={ImagesList} openModal={this.openModal} />
-        {loading && <Loader />}
-        {showLoadMore && (
-          <Button onClick={this.onloadMore} title="Load more..." />
-        )}
-      </div>
-    );
-  }
+  return (
+    <div className="App">
+      <Searchbar onSubmit={onSubmit} />
+      {showModal && (
+        <Modal
+          url={openModalItem.url}
+          alt={openModalItem.alt}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+      <ImageGallery params={imagesList} openModal={openModal} />
+      {loading && <Loader />}
+      {showLoadMore && <Button onClick={onloadMore} title="Load more..." />}
+    </div>
+  );
 }
-
-export default App;
